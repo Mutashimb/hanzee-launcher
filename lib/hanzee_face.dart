@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
 import 'package:sensors_plus/sensors_plus.dart';
 
 enum KawaiiMood { happy, excited, surprised, thinking, sleepy }
@@ -17,8 +16,6 @@ class HanZeeFace extends StatefulWidget {
 }
 
 class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
-  late AnimationController _moodController;
-  late Animation<double> _moodAnimation;
   late AnimationController _idleController;
   
   bool _isBlinking = false;
@@ -28,9 +25,8 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
   final Random _random = Random();
   double _jitterX = 0;
   double _jitterY = 0;
-  
-  Offset _lookAtOffset = Offset.zero;      
-  Offset _idleLookOffset = Offset.zero;    
+     
+  Offset _targetLookOffset = Offset.zero;    
   Timer? _saccadeTimer;
   Timer? _idleLookTimer;
   Timer? _sleepTimer;
@@ -39,20 +35,10 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
   void initState() {
     super.initState();
 
-    _moodController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-
     _idleController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
-
-    _moodAnimation = CurvedAnimation(
-      parent: _moodController,
-      curve: Curves.elasticOut, 
-    );
 
     _startBlinkCycle();
     _startOrganicLogic();
@@ -69,7 +55,6 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
   void _setMood(KawaiiMood mood, {Duration? duration}) {
     if (_currentMood == mood && mood != KawaiiMood.happy) return;
     setState(() => _currentMood = mood);
-    _moodController.forward(from: 0.0);
     _resetSleepTimer();
 
     if (duration != null) {
@@ -81,28 +66,29 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
 
   void _resetSleepTimer() {
     _sleepTimer?.cancel();
-    _sleepTimer = Timer(const Duration(seconds: 10), () {
+    _sleepTimer = Timer(const Duration(seconds: 60), () {
       if (mounted) _setMood(KawaiiMood.sleepy);
     });
   }
 
   void _startOrganicLogic() {
-    _saccadeTimer = Timer.periodic(const Duration(milliseconds: 600), (timer) {
+    // Saccade: Gerakan mata kecil yang tidak teratur agar terlihat hidup
+    _saccadeTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
       if (mounted) {
         setState(() {
-          _jitterX = (_random.nextDouble() - 0.5) * 1.2;
-          _jitterY = (_random.nextDouble() - 0.5) * 1.2;
+          _jitterX = (_random.nextDouble() - 0.5) * 2.0;
+          _jitterY = (_random.nextDouble() - 0.5) * 2.0;
         });
       }
     });
 
-    _idleLookTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      if (mounted && _lookAtOffset == Offset.zero && _currentMood == KawaiiMood.happy) {
+    _idleLookTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted && _targetLookOffset == Offset.zero && _currentMood == KawaiiMood.happy) {
         setState(() {
-          _idleLookOffset = Offset((_random.nextDouble() - 0.5) * 15, (_random.nextDouble() - 0.5) * 6);
+          _targetLookOffset = Offset((_random.nextDouble() - 0.5) * 20, (_random.nextDouble() - 0.5) * 10);
         });
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (mounted) setState(() => _idleLookOffset = Offset.zero);
+        Future.delayed(const Duration(milliseconds: 2000), () {
+          if (mounted) setState(() => _targetLookOffset = Offset.zero);
         });
       }
     });
@@ -113,24 +99,23 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
     double dx = localPosition.dx - center.dx;
     double dy = localPosition.dy - center.dy;
     
-    double maxLookDistance = 12.0; 
+    double maxLookDistance = 15.0; 
     double distance = sqrt(dx * dx + dy * dy);
     double multiplier = min(maxLookDistance, distance) / max(1, distance);
 
     setState(() {
-      _lookAtOffset = Offset(dx * multiplier, dy * multiplier);
-      _idleLookOffset = Offset.zero; 
+      _targetLookOffset = Offset(dx * multiplier, dy * multiplier);
     });
     if (_currentMood == KawaiiMood.sleepy) _setMood(KawaiiMood.happy);
     _resetSleepTimer();
   }
 
   void _startBlinkCycle() {
-    Timer.periodic(const Duration(seconds: 4), (timer) async {
+    Timer.periodic(const Duration(seconds: 5), (timer) async {
       if (!mounted) return;
-      if (_currentMood == KawaiiMood.happy) {
+      if (_currentMood != KawaiiMood.sleepy) {
         setState(() => _isBlinking = true);
-        await Future.delayed(const Duration(milliseconds: 120));
+        await Future.delayed(const Duration(milliseconds: 150));
         if (mounted) setState(() => _isBlinking = false);
       }
     });
@@ -142,7 +127,6 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
     _saccadeTimer?.cancel();
     _idleLookTimer?.cancel();
     _sleepTimer?.cancel();
-    _moodController.dispose();
     _idleController.dispose();
     super.dispose();
   }
@@ -154,27 +138,34 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
         final size = Size(constraints.maxWidth, 200);
         return GestureDetector(
           onPanUpdate: (details) => _handlePointer(details.localPosition, size),
-          onPanEnd: (_) => setState(() => _lookAtOffset = Offset.zero),
+          onPanEnd: (_) => setState(() => _targetLookOffset = Offset.zero),
           onTapDown: (details) => _handlePointer(details.localPosition, size),
-          onTapUp: (_) => setState(() => _lookAtOffset = Offset.zero),
+          onTapUp: (_) => setState(() => _targetLookOffset = Offset.zero),
           onDoubleTap: () => _setMood(KawaiiMood.surprised, duration: const Duration(seconds: 2)),
           onLongPress: () => _setMood(KawaiiMood.thinking, duration: const Duration(seconds: 4)),
           onTap: () => _setMood(KawaiiMood.happy),
           
-          child: AnimatedBuilder(
-            animation: Listenable.merge([_moodAnimation, _idleController]),
-            builder: (context, child) {
-              return CustomPaint(
-                size: const Size(220, 160),
-                painter: FluidKawaiiPainter(
-                  mood: _currentMood,
-                  moodProgress: _moodAnimation.value,
-                  isBlinking: _isBlinking,
-                  idleValue: _idleController.value,
-                  jitterX: _jitterX,
-                  jitterY: _jitterY,
-                  lookAtOffset: _lookAtOffset == Offset.zero ? _idleLookOffset : _lookAtOffset,
-                ),
+          // Menggunakan TweenAnimationBuilder untuk transisi gerakan mata yang super halus
+          child: TweenAnimationBuilder<Offset>(
+            tween: Tween<Offset>(begin: Offset.zero, end: _targetLookOffset),
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            builder: (context, animatedOffset, child) {
+              return AnimatedBuilder(
+                animation: _idleController,
+                builder: (context, child) {
+                  return CustomPaint(
+                    size: const Size(220, 160),
+                    painter: CuteKawaiiPainter(
+                      mood: _currentMood,
+                      isBlinking: _isBlinking,
+                      idleValue: _idleController.value,
+                      jitterX: _jitterX,
+                      jitterY: _jitterY,
+                      lookAtOffset: animatedOffset,
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -184,18 +175,16 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
   }
 }
 
-class FluidKawaiiPainter extends CustomPainter {
+class CuteKawaiiPainter extends CustomPainter {
   final KawaiiMood mood;
-  final double moodProgress;
   final bool isBlinking;
   final double idleValue;
   final double jitterX;
   final double jitterY;
   final Offset lookAtOffset;
 
-  FluidKawaiiPainter({
+  CuteKawaiiPainter({
     required this.mood,
-    required this.moodProgress, 
     required this.isBlinking,
     required this.idleValue,
     required this.jitterX,
@@ -207,144 +196,151 @@ class FluidKawaiiPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final unit = min(size.width, size.height);
     final center = Offset(size.width / 2, size.height / 2);
-    final mainColor = Colors.white;
-
+    
     final linePaint = Paint()
-      ..color = mainColor
+      ..color = Colors.white.withValues(alpha: 0.9)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = unit * 0.035 // Style tipis
+      ..strokeWidth = unit * 0.025
       ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 1.2);
+      ..strokeJoin = StrokeJoin.round;
 
-    double floatingY = cos(idleValue * 2 * pi) * 3.0;
-    double eyeX = unit * 0.30;
-    double eyeY = unit * 0.1;
+    double floatingY = sin(idleValue * 2 * pi) * 3.0;
+    double eyeSpacing = unit * 0.25;
+    double eyeY = center.dy + floatingY;
 
-    // 1. Pipi Glow (Menggunakan Path melingkar kustom)
+    bool isSleepy = mood == KawaiiMood.sleepy;
+    double finalJitterX = isSleepy ? 0 : jitterX;
+    double finalJitterY = isSleepy ? 0 : jitterY;
+    Offset finalLookOffset = isSleepy ? Offset.zero : lookAtOffset;
+
+    // 1. Draw Soft Blush (Pipi)
     if (mood != KawaiiMood.sleepy) {
-      _drawOrganicGlow(canvas, Offset(center.dx - eyeX, center.dy + unit * 0.25 + floatingY), unit * 0.06);
-      _drawOrganicGlow(canvas, Offset(center.dx + eyeX, center.dy + unit * 0.25 + floatingY), unit * 0.06);
+      _drawSoftCheek(canvas, Offset(center.dx - eyeSpacing + unit * 0.05 , eyeY + unit * 0.1), unit * 0.13);
+      _drawSoftCheek(canvas, Offset(center.dx + eyeSpacing - unit * 0.05, eyeY + unit * 0.1), unit * 0.13);
     }
 
-    // 2. Gambar Mata (Pure Path)
-    _drawPathEye(canvas, Offset(center.dx - eyeX + jitterX + lookAtOffset.dx, center.dy + eyeY + floatingY + jitterY + lookAtOffset.dy), unit, linePaint, true);
-    _drawPathEye(canvas, Offset(center.dx + eyeX + (jitterX * 0.7) + lookAtOffset.dx, center.dy + eyeY + floatingY + (jitterY * 0.7) + lookAtOffset.dy), unit, linePaint, false);
+       // 2. Draw Eyes with Glass Effect
+    _drawGlassyEye(
+       canvas, 
+      Offset(center.dx - eyeSpacing + finalJitterX + finalLookOffset.dx, eyeY + finalJitterY + finalLookOffset.dy), 
+      unit, 
+      linePaint, 
+      
+    );
+    _drawGlassyEye(
+      canvas, 
+      Offset(center.dx + eyeSpacing + finalJitterX + finalLookOffset.dx, eyeY + finalJitterY + finalLookOffset.dy), 
+      unit, 
+      linePaint, 
+   
+    );
 
-    // 3. Gambar Mulut (Pure Path)
-    _drawPathMouth(canvas, center.translate(0, floatingY * 0.5), unit, linePaint);
+    // 3. Draw Mouth
+    _drawCuteMouth(canvas, center.translate(0, floatingY), unit, linePaint);
   }
 
-  void _drawOrganicGlow(Canvas canvas, Offset pos, double radius) {
-    final glowPath = Path();
-    // Membuat lingkaran manual dengan 4 kurva Bezier agar terlihat lebih lembut
-    glowPath.moveTo(pos.dx, pos.dy - radius);
-    glowPath.quadraticBezierTo(pos.dx + radius, pos.dy - radius, pos.dx + radius, pos.dy);
-    glowPath.quadraticBezierTo(pos.dx + radius, pos.dy + radius, pos.dx, pos.dy + radius);
-    glowPath.quadraticBezierTo(pos.dx - radius, pos.dy + radius, pos.dx - radius, pos.dy);
-    glowPath.quadraticBezierTo(pos.dx - radius, pos.dy - radius, pos.dx, pos.dy - radius);
+  void _drawSoftCheek(Canvas canvas, Offset pos, double radius) {
+    final cheekPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.pinkAccent.withValues(alpha: 0.3),
+          Colors.pinkAccent.withValues(alpha: 0.0),
+        ],
+      ).createShader(Rect.fromCircle(center: pos, radius: radius));
     
-    final p = Paint()
-      ..color = Colors.white.withValues(alpha: 0.12)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-    canvas.drawPath(glowPath, p);
+    canvas.drawCircle(pos, radius, cheekPaint);
   }
 
-  void _drawPathEye(Canvas canvas, Offset pos, double unit, Paint stroke, bool isLeft) {
-    canvas.save();
-    canvas.translate(pos.dx, pos.dy);
+  void _drawGlassyEye(Canvas canvas, Offset pos, double unit, Paint stroke) {
+    if (isBlinking && mood != KawaiiMood.excited) {
+      // Kelopak mata saat berkedip
+      final blinkPath = Path();
+      blinkPath.moveTo(pos.dx - unit * 0.05, pos.dy);
+      blinkPath.quadraticBezierTo(pos.dx, pos.dy + unit * 0.02, pos.dx + unit * 0.05, pos.dy);
+      canvas.drawPath(blinkPath, stroke);
+      return;
+    }
+
+    if (mood == KawaiiMood.sleepy) {
+      // Mata setengah tertutup untuk mood sleepy
+      final sleepyPath = Path();
+      sleepyPath.moveTo(pos.dx - unit * 0.05, pos.dy);
+      sleepyPath.quadraticBezierTo(pos.dx, pos.dy + unit * 0.04, pos.dx + unit * 0.05, pos.dy);
+      canvas.drawPath(sleepyPath, stroke);
+      return;
+    }
+
+    if (mood == KawaiiMood.surprised) {
+      // Mata lebih besar untuk mood surprised
+      final surprisedPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = unit * 0.02;
+      canvas.drawCircle(pos, unit * 0.08, surprisedPaint);
+    }
+
+
+    double eyeSize = unit * 0.08;
+    
+    // Base Eye (Pupil gelap dengan gradasi)
+    final pupilPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          const Color(0xFF2D2D2D),
+          const Color(0xFF000000),
+        ],
+        center: const Alignment(0.2, -0.2),
+      ).createShader(Rect.fromCircle(center: pos, radius: eyeSize));
+
+    canvas.drawCircle(pos, eyeSize, pupilPaint);
+
+    // Glass Effect Layer 1 (Pantulan cahaya bawah yang halus)
+    final bottomReflection = Paint()
+      ..color = Colors.white.withValues(alpha: 0.15);
+    canvas.drawArc(
+      Rect.fromCircle(center: pos, radius: eyeSize * 0.8),
+      0.2, 
+      pi * 0.8, 
+      false, 
+      bottomReflection
+    );
+
+    // Glass Effect Layer 2 (Highlight utama/kaca)
+    final mainHighlight = Paint()..color = Colors.white.withValues(alpha: 0.9);
+    canvas.drawCircle(
+      pos.translate(-eyeSize * 0.1 , -eyeSize * 0.1), 
+      eyeSize * 0.3, 
+      mainHighlight
+    );
+
+    // Glass Effect Layer 3 (Highlight sekunder kecil)
+    canvas.drawCircle(
+      pos.translate(eyeSize * 0.4, eyeSize * 0.2), 
+      eyeSize * 0.12, 
+      Paint()..color = Colors.white.withValues(alpha: 0.4)
+    );
+  }
+
+  void _drawCuteMouth(Canvas canvas, Offset center, double unit, Paint stroke) {
+    double y = center.dy + unit * 0.18;
     final path = Path();
 
-    if (isBlinking && (mood == KawaiiMood.happy || mood == KawaiiMood.thinking)) {
-      path.moveTo(-unit * 0.08, 0);
-      path.quadraticBezierTo(0, unit * 0.01, unit * 0.08, 0);
+    if (mood == KawaiiMood.surprised) {
+      canvas.drawCircle(Offset(center.dx, y), unit * 0.03, stroke);
+    } else if (mood == KawaiiMood.sleepy) {
+      path.moveTo(center.dx - unit * 0.03, y + unit * 0.02);
+      path.quadraticBezierTo(center.dx, y, center.dx + unit * 0.03, y + unit * 0.02);
       canvas.drawPath(path, stroke);
     } else {
-      switch (mood) {
-        case KawaiiMood.excited:
-          double s = unit * 0.07 * moodProgress;
-          double xSign = isLeft ? 1 : -1;
-          path.moveTo(-s * xSign, -s);
-          path.quadraticBezierTo(0, 0, s * xSign, 0); // Titik tajam di tengah
-          path.quadraticBezierTo(0, 0, -s * xSign, s);
-          canvas.drawPath(path, stroke);
-          break;
-          
-        case KawaiiMood.surprised:
-          double r = unit * 0.1 * moodProgress;
-          // Membuat lingkaran kaget dengan Path
-          path.moveTo(0, -r);
-          path.quadraticBezierTo(r, -r, r, 0);
-          path.quadraticBezierTo(r, r, 0, r);
-          path.quadraticBezierTo(-r, r, -r, 0);
-          path.quadraticBezierTo(-r, -r, 0, -r);
-          canvas.drawPath(path, stroke);
-          break;
-
-        case KawaiiMood.thinking:
-          double w = unit * (isLeft ? 0.08 : 0.12);
-          double h = unit * (isLeft ? 0.04 : 0.15);
-          path.moveTo(0, -h);
-          path.quadraticBezierTo(w, -h, w, 0);
-          path.quadraticBezierTo(w, h, 0, h);
-          path.quadraticBezierTo(-w, h, -w, 0);
-          path.quadraticBezierTo(-w, -h, 0, -h);
-          canvas.drawPath(path, stroke);
-          break;
-
-        case KawaiiMood.sleepy:
-          double w = unit * 0.08;
-          path.moveTo(-w, 0);
-          path.quadraticBezierTo(0, -unit * 0.05, w, 0);
-          canvas.drawPath(path, stroke);
-          break;
-
-        default: // Happy / Normal (Oval kustom)
-          double w = unit * 0.08;
-          double h = unit * 0.12;
-          path.moveTo(0, -h);
-          path.quadraticBezierTo(w, -h, w, 0);
-          path.quadraticBezierTo(w, h, 0, h);
-          path.quadraticBezierTo(-w, h, -w, 0);
-          path.quadraticBezierTo(-w, -h, 0, -h);
-          canvas.drawPath(path, stroke);
-      }
-    }
-    canvas.restore();
-  }
-
-  void _drawPathMouth(Canvas canvas, Offset center, double unit, Paint stroke) {
-    double y = center.dy + unit * 0.35;
-    final path = Path();
-
-    switch (mood) {
-      case KawaiiMood.surprised:
-        double r = unit * 0.03 * moodProgress;
-        path.moveTo(center.dx, y - r);
-        path.quadraticBezierTo(center.dx + r, y - r, center.dx + r, y);
-        path.quadraticBezierTo(center.dx + r, y + r, center.dx, y + r);
-        path.quadraticBezierTo(center.dx - r, y + r, center.dx - r, y);
-        path.quadraticBezierTo(center.dx - r, y - r, center.dx, y - r);
-        canvas.drawPath(path, stroke);
-        break;
-      case KawaiiMood.thinking:
-        path.moveTo(center.dx - unit * 0.04, y);
-        path.quadraticBezierTo(center.dx, y, center.dx + unit * 0.04, y);
-        canvas.drawPath(path, stroke);
-        break;
-      case KawaiiMood.sleepy:
-        path.moveTo(center.dx - unit * 0.03, y + 3);
-        path.quadraticBezierTo(center.dx, y - unit * 0.02, center.dx + unit * 0.03, y + 3);
-        canvas.drawPath(path, stroke);
-        break;
-      default: // Happy
-        double curve = unit * (0.03 + (0.02 * moodProgress));
-        double w = unit * (0.05 + (0.01 * moodProgress));
-        path.moveTo(center.dx - w, y);
-        path.quadraticBezierTo(center.dx, y + curve, center.dx + w, y);
-        canvas.drawPath(path, stroke);
+      // Small cat mouth (w)
+      double w = unit * 0.05;
+      path.moveTo(center.dx - w, y);
+      // path.quadraticBezierTo(center.dx - w/2, y + unit * 0.03, center.dx, y);
+      path.quadraticBezierTo(center.dx + w/8, y + unit * 0.03, center.dx + w, y);
+      canvas.drawPath(path, stroke);
     }
   }
 
   @override
-  bool shouldRepaint(covariant FluidKawaiiPainter oldDelegate) => true;
+  bool shouldRepaint(covariant CuteKawaiiPainter oldDelegate) => true;
 }
