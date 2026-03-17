@@ -5,8 +5,14 @@ import 'package:installed_apps/installed_apps.dart';
 import 'dart:math';
 
 class AppListPanel extends StatefulWidget {
+  final bool isInitialLoading; // Tambahkan ini
   final List<AppInfo> apps;
-  const AppListPanel({super.key, required this.apps});
+  const AppListPanel({
+    super.key,
+    required this.apps,
+    required this.isInitialLoading
+    });
+  
 
   @override
   State<AppListPanel> createState() => _AppListPanelState();
@@ -15,6 +21,7 @@ class AppListPanel extends StatefulWidget {
 class _AppListPanelState extends State<AppListPanel> with AutomaticKeepAliveClientMixin {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+
   List<AppInfo> _filteredApps = [];
 
   @override
@@ -76,15 +83,17 @@ class _AppListPanelState extends State<AppListPanel> with AutomaticKeepAliveClie
                   ),
                   const SizedBox(height: 10),
                   Expanded(
-                    child: _filteredApps.isEmpty
-                        ? const Center(child: Text("No apps found", style: TextStyle(color: Colors.white24)))
+                    child: widget.isInitialLoading 
+                      ? const Center(child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2))
+                      : _filteredApps.isEmpty 
+                         ? const Center(child: Text("No apps found", style: TextStyle(color: Colors.white24)))
                         : ListView.builder(
                             controller: _scrollController,
                             itemCount: _filteredApps.length,
                             itemExtent: 52.0,
                             padding: EdgeInsets.zero,
                             physics: const BouncingScrollPhysics(),
-                            itemBuilder: (context, index) => AppListItem(app: _filteredApps[index]),
+                            itemBuilder: (context, index) => AppListItem(app: _filteredApps[index]),                       
                           ),
                   ),
                 ],

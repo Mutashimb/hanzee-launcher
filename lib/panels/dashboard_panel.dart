@@ -16,6 +16,7 @@ class DashboardPanel extends StatefulWidget {
   final Function(String) onToggleWatch;
   final List<String> quickApps; // Tambahkan ini
   final Function(String) onToggleQuickApp; // Tambahkan ini
+  final bool isInitialLoading;
 
   const DashboardPanel({
     super.key,
@@ -27,6 +28,7 @@ class DashboardPanel extends StatefulWidget {
     required this.onToggleWatch,
     required this.quickApps, // Tambahkan ini
     required this.onToggleQuickApp, // Tambahkan ini
+    required this.isInitialLoading,
   });
 
   @override
@@ -205,19 +207,15 @@ class _DashboardPanelState extends State<DashboardPanel> with AutomaticKeepAlive
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildSectionHeader("DAILY HABITS"),
-                  if (widget.watchedPackages.isEmpty)
-                    const Text("No apps on watchlist.", style: TextStyle(color: Colors.white24, fontSize: 24))
-                  else
+                  if (widget.isInitialLoading)
+                      const Text("scanning habits...", style: TextStyle(color: Colors.white54, fontSize: 12))
+                    else if (widget.watchedPackages.isEmpty)
+                      const Text("No apps on watchlist.", style: TextStyle(color: Colors.white54, fontSize: 12))
+                    else
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: widget.watchedPackages.map((pkg) {
-                        if (widget.allApps.isEmpty) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            child: const Text("loading...", style: TextStyle(color: Colors.white10)),
-                          );
-                        }
                         // FIX: Memberikan nilai default lengkap untuk AppInfo jika tidak ditemukan
                         final app = widget.allApps.firstWhere(
                           (a) => a.packageName == pkg,
@@ -264,24 +262,63 @@ class _DashboardPanelState extends State<DashboardPanel> with AutomaticKeepAlive
                   const SizedBox(height: 40),
 
                   _buildSectionHeader("QUICK ACCESS"),
-                  if (widget.quickApps.isEmpty)
-                    const Text("No quick apps set.", style: TextStyle(color: Colors.white10, fontSize: 12))
-                  else
-                    Wrap(
-                      spacing: 8,
-                      children: widget.quickApps.map((pkg) {
-                        final app = widget.allApps.firstWhere((a) => a.packageName == pkg, orElse: () => widget.allApps.first);
-                        return Chip(
-                          label: Text(app.name.toLowerCase(), style: const TextStyle(color: Colors.white, fontSize: 12)),
-                          backgroundColor: Colors.white10,
-                          onDeleted: () => widget.onToggleQuickApp(pkg), // Hapus lewat tanda silang
-                          deleteIconColor: Colors.white38,
-                        );
-                      }).toList(),
-                    ),
-                  TextButton(
+                    if (widget.isInitialLoading)
+                      const Text("preparing shortcuts...", style: TextStyle(color: Colors.white54, fontSize: 12))
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: widget.quickApps.map((pkg) {
+                          // Menggunakan logika pencarian aman (Safe Search) sesuai acuanmu
+                          final app = widget.allApps.firstWhere(
+                            (a) => a.packageName == pkg,
+                            orElse: () => AppInfo(
+                              name: "unknown",
+                              icon: null,
+                              packageName: pkg,
+                              versionName: "1.0",
+                              versionCode: 1,
+                              platformType: PlatformType.flutter,
+                              installedTimestamp: 0,
+                              isSystemApp: false,
+                              isLaunchableApp: true,
+                              category: AppCategory.undefined,
+                            ),
+                          );
+
+                          return GestureDetector(
+                            // Long press untuk menghapus aplikasi dari Quick Access
+                            onLongPress: () {
+                              widget.onToggleQuickApp(pkg);
+                              HapticFeedback.heavyImpact();
+                            },
+                            // Tap untuk membuka aplikasi
+                            onTap: () => InstalledApps.startApp(pkg),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.white10),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                app.name.toLowerCase(),
+                                style: const TextStyle(
+                                  color: Colors.white, 
+                                  fontSize: 13, 
+                                  fontWeight: FontWeight.w500
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+
+                    // Tombol tambah aplikasi tetap di bawah Wrap
+                    TextButton.icon(
                     onPressed: () => _showAppSelector(isHabit: false),
-                    child: const Text("+ ADD APP", style: TextStyle(color: Colors.white24, fontSize: 11)),
+                    icon: const Icon(Icons.add, size: 14, color: Colors.white24),
+                    label: const Text("Add App", style: TextStyle(color: Colors.white30, fontSize: 16)),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
                   ),
                   const SizedBox(height: 40),
 

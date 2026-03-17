@@ -46,6 +46,7 @@ class _MainScreenState extends State<MainScreen> {
   final PageController _pageController = PageController(initialPage: 1);
   static const platform = MethodChannel('com.example.hanzee/usage');
   
+  bool _isInitialLoading = true;
   Timer? _usageTimer;
   List<AppInfo> _installedApps = [];
   List<Map<String, dynamic>> _localTasks = [];
@@ -80,12 +81,22 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _loadData() async {
-    await _loadTasks();
-    await _preFetchApps(); // Tunggu daftar aplikasi selesai diambil...
-    await _loadWatchedApps(); // ...baru load habit dan hitung durasinya.
-    await _fetchRealScreenTime();
-    await _loadMotivation();
-    await _loadQuickApps();
+    setState(() => _isInitialLoading = true);
+
+    try {
+      await _loadTasks();
+      await _preFetchApps(); // Tunggu daftar aplikasi selesai diambil...
+      await _loadWatchedApps(); // ...baru load habit dan hitung durasinya.
+      await _fetchRealScreenTime();
+      await _loadMotivation();
+      await _loadQuickApps();
+    } catch (e) {
+      debugPrint("Error during initial load: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isInitialLoading = false);
+      }
+    }  
   }
 
   // Fungsi Load
@@ -232,6 +243,7 @@ class _MainScreenState extends State<MainScreen> {
             onToggleWatch: _toggleWatchApp,
             quickApps: _quickApps, // Kirim ini
             onToggleQuickApp: _toggleQuickApp, // Kirim ini
+            isInitialLoading: _isInitialLoading,
           ),
           HomePanel(
             screenTime: _todayScreenTime, 
@@ -242,8 +254,12 @@ class _MainScreenState extends State<MainScreen> {
             motivationText: _motivationText, // Kirim ini
             onUpdateMotivation: _updateMotivation, // Kirim ini
             quickApps: _quickApps, // Kirim ini
+            isInitialLoading: _isInitialLoading,
           ),
-          AppListPanel(apps: _installedApps),
+          AppListPanel(
+            apps: _installedApps,
+            isInitialLoading: _isInitialLoading,
+            ),
         ],
       ),
     );

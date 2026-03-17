@@ -17,6 +17,7 @@ class HomePanel extends StatelessWidget {
   final String motivationText;
   final Function(String) onUpdateMotivation;
   final List<String> quickApps;
+  final bool isInitialLoading;
 
   const HomePanel({
     super.key,
@@ -28,6 +29,7 @@ class HomePanel extends StatelessWidget {
     required this.motivationText, // Masukkan ke constructor
     required this.onUpdateMotivation,
     required this.quickApps,
+    required this.isInitialLoading,
   });
 
   void _showEditMotivation(BuildContext context) {
