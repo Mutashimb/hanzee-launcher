@@ -50,22 +50,120 @@ class _MainScreenState extends State<MainScreen> {
   List<AppInfo> _installedApps = [];
   List<Map<String, dynamic>> _localTasks = [];
   Duration _todayScreenTime = Duration.zero;
+  List<String> _watchedPackages = [];
+  Map<String, int> _habitUsageData = {};
+  String _motivationText = "STAY FOCUSED"; // Default value
+  List<String> _quickApps = []; // Menyimpan package name aplikasi cepat
+  
 
   @override
   void initState() {
     super.initState();
-    _loadData();    
+    _loadData(); 
+
+    // --- POSISI YANG BENAR: DI DALAM initState ---
+    
+    // 1. Listener untuk menutup keyboard saat geser halaman
+    _pageController.addListener(() {
+      if (_pageController.hasClients && _pageController.page != 2) {
+        FocusScope.of(context).unfocus();
+      }
+    });
+
+    // 2. Timer untuk update screen time & habit dots setiap menit
     _usageTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       _fetchRealScreenTime();
+      _fetchHabitsUsage(); 
     });
+
+    
   }
 
   Future<void> _loadData() async {
     await _loadTasks();
-    await Future.wait([
-      _preFetchApps(),
-      _fetchRealScreenTime(),
-    ]);
+    await _preFetchApps(); // Tunggu daftar aplikasi selesai diambil...
+    await _loadWatchedApps(); // ...baru load habit dan hitung durasinya.
+    await _fetchRealScreenTime();
+    await _loadMotivation();
+    await _loadQuickApps();
+  }
+
+  // Fungsi Load
+  Future<void> _loadQuickApps() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _quickApps = prefs.getStringList('quick_apps') ?? [];
+    });
+  }
+
+  // Fungsi Toggle (Tambah/Hapus)
+  void _toggleQuickApp(String packageName) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (_quickApps.contains(packageName)) {
+        _quickApps.remove(packageName);
+      } else if (_quickApps.length < 5) { // Batasi maksimal 5 aplikasi
+        _quickApps.add(packageName);
+      }
+    });
+    await prefs.setStringList('quick_apps', _quickApps);
+  }
+
+  // Fungsi untuk load teks
+  Future<void> _loadMotivation() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _motivationText = prefs.getString('motivation_text') ?? "STAY FOCUSED";
+    });
+  }
+
+  // Fungsi untuk update & simpan teks
+  void _updateMotivation(String newText) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _motivationText = newText;
+    });
+    await prefs.setString('motivation_text', newText);
+  }
+
+  Future<void> _loadWatchedApps() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _watchedPackages = prefs.getStringList('watched_apps') ?? [];
+      });
+      _fetchHabitsUsage();
+    }
+  }
+
+  // Ambil durasi penggunaan dari Native
+  Future<void> _fetchHabitsUsage() async {
+    Map<String, int> tempUsage = {};
+    for (String pkg in _watchedPackages) {
+      try {
+        final int minutes = await platform.invokeMethod('getSpecificAppUsage', {'packageName': pkg});
+        tempUsage[pkg] = minutes;
+      } catch (e) {
+        tempUsage[pkg] = 0;
+      }
+    }
+    if (mounted) {
+      setState(() => _habitUsageData = tempUsage);
+    }
+  }
+
+  // Fungsi Toggle (dipanggil dari Dashboard)
+  void _toggleWatchApp(String packageName) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (_watchedPackages.contains(packageName)) {
+        _watchedPackages.remove(packageName);
+      } else {
+        _watchedPackages.add(packageName);
+      }
+    });
+    await prefs.setStringList('watched_apps', _watchedPackages);
+    _fetchHabitsUsage(); 
   }
 
   @override
@@ -120,12 +218,31 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Tambahkan ini agar layout tidak rusak saat keyboard muncul
       body: PageView(
         controller: _pageController,
         physics: const BouncingScrollPhysics(),
         children: [
-          DashboardPanel(tasks: _localTasks, screenTime: _todayScreenTime, onTasksChanged: _updateTasks),
-          HomePanel(screenTime: _todayScreenTime, taskCount: _localTasks.length),
+          DashboardPanel(
+            tasks: _localTasks,
+            screenTime: _todayScreenTime,
+            onTasksChanged: _updateTasks,
+            watchedPackages: _watchedPackages,
+            allApps: _installedApps,
+            onToggleWatch: _toggleWatchApp,
+            quickApps: _quickApps, // Kirim ini
+            onToggleQuickApp: _toggleQuickApp, // Kirim ini
+          ),
+          HomePanel(
+            screenTime: _todayScreenTime, 
+            taskCount: _localTasks.length,
+            watchedPackages: _watchedPackages,
+            habitUsageData: _habitUsageData,
+            allApps: _installedApps,
+            motivationText: _motivationText, // Kirim ini
+            onUpdateMotivation: _updateMotivation, // Kirim ini
+            quickApps: _quickApps, // Kirim ini
+          ),
           AppListPanel(apps: _installedApps),
         ],
       ),
