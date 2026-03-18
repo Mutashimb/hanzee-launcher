@@ -10,6 +10,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.*
+import android.annotation.SuppressLint
+import java.lang.reflect.Method
 
 class MainActivity: FlutterActivity() {
     // Pastikan CHANNEL ini sama dengan yang ada di main.dart
@@ -29,7 +31,15 @@ class MainActivity: FlutterActivity() {
                         result.success(getAppUsage(packageName))
                     } else {
                         result.error("INVALID_PACKAGE", "Package name is null", null)
+                        }
                     }
+                "openNotifications" -> {
+                        expandStatusBar("expandNotificationsPanel")
+                        result.success(null)
+                    }
+                "openQuickSettings" -> {
+                        expandStatusBar("expandSettingsPanel")
+                        result.success(null)    
                 }
                 else -> result.notImplemented()
             }
@@ -76,4 +86,16 @@ class MainActivity: FlutterActivity() {
         
         return (timeInMs / 1000 / 60).toInt()
     }
+
+    private fun expandStatusBar(methodName: String) {
+    try {
+        @SuppressLint("WrongConstant")
+        val statusBarService = getSystemService("statusbar")
+        val statusBarManager: Class<*> = Class.forName("android.app.StatusBarManager")
+        val method: Method = statusBarManager.getMethod(methodName)
+        method.invoke(statusBarService)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
 }

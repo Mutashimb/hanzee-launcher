@@ -227,10 +227,29 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      resizeToAvoidBottomInset: false, // Tambahkan ini agar layout tidak rusak saat keyboard muncul
-      body: PageView(
+  @override
+Widget build(BuildContext context) {
+  final double screenWidth = MediaQuery.of(context).size.width;
+
+  return Scaffold(
+    resizeToAvoidBottomInset: false,
+    body: GestureDetector(
+      // PERBAIKAN: Hapus '=>' dan gunakan '{ }' saja
+      onVerticalDragUpdate: (details) {
+        // Cek jika gerakan ke bawah (delta positive)
+        if (details.delta.dy > 10) {
+          double xPosition = details.globalPosition.dx;
+          
+          if (xPosition < screenWidth / 2) {
+            // SWIPE KIRI -> Notifikasi (Pastikan pakai 's' jika di Kotlin-nya 'openNotifications')
+            platform.invokeMethod('openNotifications');
+          } else {
+            // SWIPE KANAN -> Quick Settings
+            platform.invokeMethod('openQuickSettings');
+          }
+        }
+      },
+      child: PageView(
         controller: _pageController,
         physics: const BouncingScrollPhysics(),
         children: [
@@ -241,8 +260,8 @@ class _MainScreenState extends State<MainScreen> {
             watchedPackages: _watchedPackages,
             allApps: _installedApps,
             onToggleWatch: _toggleWatchApp,
-            quickApps: _quickApps, // Kirim ini
-            onToggleQuickApp: _toggleQuickApp, // Kirim ini
+            quickApps: _quickApps,
+            onToggleQuickApp: _toggleQuickApp,
             isInitialLoading: _isInitialLoading,
           ),
           HomePanel(
@@ -251,17 +270,18 @@ class _MainScreenState extends State<MainScreen> {
             watchedPackages: _watchedPackages,
             habitUsageData: _habitUsageData,
             allApps: _installedApps,
-            motivationText: _motivationText, // Kirim ini
-            onUpdateMotivation: _updateMotivation, // Kirim ini
-            quickApps: _quickApps, // Kirim ini
+            motivationText: _motivationText,
+            onUpdateMotivation: _updateMotivation,
+            quickApps: _quickApps,
             isInitialLoading: _isInitialLoading,
           ),
           AppListPanel(
             apps: _installedApps,
             isInitialLoading: _isInitialLoading,
             ),
-        ],
-      ),
+          ],
+        ),
+      ), // Akhir GestureDetector
     );
   }
 }
