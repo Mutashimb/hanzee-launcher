@@ -5,14 +5,13 @@ import 'package:installed_apps/installed_apps.dart';
 import 'dart:math';
 
 class AppListPanel extends StatefulWidget {
-  final bool isInitialLoading; // Tambahkan ini
+  final bool isInitialLoading;
   final List<AppInfo> apps;
   const AppListPanel({
     super.key,
     required this.apps,
-    required this.isInitialLoading
-    });
-  
+    required this.isInitialLoading,
+  });
 
   @override
   State<AppListPanel> createState() => _AppListPanelState();
@@ -23,6 +22,7 @@ class _AppListPanelState extends State<AppListPanel> with AutomaticKeepAliveClie
   final TextEditingController _searchController = TextEditingController();
 
   List<AppInfo> _filteredApps = [];
+  final Map<String, int> _alphabetMap = {};
 
   @override
   bool get wantKeepAlive => true;
@@ -31,19 +31,29 @@ class _AppListPanelState extends State<AppListPanel> with AutomaticKeepAliveClie
   void initState() {
     super.initState();
     _filteredApps = widget.apps;
+    _buildAlphabetMap();
   }
 
   @override
   void didUpdateWidget(AppListPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.apps.length != oldWidget.apps.length) {
-      setState(() {
-        if (_searchController.text.isEmpty) {
-          _filteredApps = widget.apps;
-        } else {
-          _filterApps(_searchController.text);
-        }
-      });
+      _filteredApps = _searchController.text.isEmpty 
+          ? widget.apps 
+          : widget.apps.where((app) => app.name.toLowerCase().contains(_searchController.text.toLowerCase())).toList();
+      _buildAlphabetMap();
+      setState(() {});
+    }
+  }
+
+  void _buildAlphabetMap() {
+    _alphabetMap.clear();
+    for (int i = 0; i < _filteredApps.length; i++) {
+      String char = _filteredApps[i].name[0].toUpperCase();
+      if (!RegExp(r'[A-Z]').hasMatch(char)) char = '#';
+      if (!_alphabetMap.containsKey(char)) {
+        _alphabetMap[char] = i;
+      }
     }
   }
 
@@ -52,13 +62,15 @@ class _AppListPanelState extends State<AppListPanel> with AutomaticKeepAliveClie
       _filteredApps = widget.apps
           .where((app) => app.name.toLowerCase().contains(query.toLowerCase()))
           .toList();
+      _buildAlphabetMap(); // PENTING: Update map setelah filter
     });
   }
 
   void _scrollToLetter(String letter) {
-    if (_filteredApps.isEmpty) return;
-    int index = _filteredApps.indexWhere((app) => app.name.toUpperCase().startsWith(letter));
-    if (index != -1) _scrollController.jumpTo(index * 52.0);
+    final index = _alphabetMap[letter];
+    if (index != null && _scrollController.hasClients) {
+      _scrollController.jumpTo(index * 52.0);
+    }
   }
 
   @override
@@ -79,7 +91,21 @@ class _AppListPanelState extends State<AppListPanel> with AutomaticKeepAliveClie
                     controller: _searchController,
                     onChanged: _filterApps,
                     style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w400),
-                    decoration: const InputDecoration(hintText: "search", hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none),
+                    decoration: InputDecoration(
+                      hintText: "search", 
+                      hintStyle: TextStyle(color: Colors.white24), 
+                      border: InputBorder.none,
+                      suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.close, color: Colors.white24),
+                            onPressed: () {
+                              _searchController.clear();
+                              _filterApps("");
+                              FocusScope.of(context).unfocus();
+                            },
+                          )
+                        : null,
+                      ),
                   ),
                   const SizedBox(height: 10),
                   Expanded(
@@ -110,7 +136,6 @@ class _AppListPanelState extends State<AppListPanel> with AutomaticKeepAliveClie
   }
 }
 
-// --- Sub-Widget: AlphabetSidebar & AppListItem ---
 class AlphabetSidebar extends StatefulWidget {
   final Function(String) onLetterSelected;
   const AlphabetSidebar({super.key, required this.onLetterSelected});
@@ -121,76 +146,116 @@ class AlphabetSidebar extends StatefulWidget {
 
 class _AlphabetSidebarState extends State<AlphabetSidebar> {
   final List<String> _alphabet = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  double _touchY = 0.0;
-  bool _isDragging = false;
+  
+  // Gunakan ValueNotifier agar tidak perlu memanggil setState di seluruh widget
+  final ValueNotifier<Offset?> _touchPos = ValueNotifier(null);
   String _lastLetter = "";
 
-  void _handleUpdate(Offset localPos, double maxHeight) {
-    final double itemHeight = maxHeight / _alphabet.length;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (details) => _handleUpdate(details.localPosition),
+      onVerticalDragStart: (details) => _handleUpdate(details.localPosition),
+      onVerticalDragEnd: (_) => _touchPos.value = null,
+      onTapDown: (details) => _handleUpdate(details.localPosition),
+      onTapUp: (_) => _touchPos.value = null,
+      child: ValueListenableBuilder<Offset?>(
+        valueListenable: _touchPos,
+        builder: (context, pos, _) {
+          return CustomPaint(
+            size: Size(60, double.infinity),
+            painter: SidebarPainter(
+              alphabet: _alphabet,
+              touchPos: pos,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _handleUpdate(Offset localPos) {
+    _touchPos.value = localPos;
+    
+    // Logika perhitungan huruf tetap di luar Painter untuk urusan data
+    RenderBox? box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    
+    double itemHeight = box.size.height / _alphabet.length;
     int index = (localPos.dy / itemHeight).floor().clamp(0, _alphabet.length - 1);
     String currentLetter = _alphabet[index];
+
     if (currentLetter != _lastLetter) {
       _lastLetter = currentLetter;
       widget.onLetterSelected(currentLetter);
       HapticFeedback.selectionClick();
     }
-    setState(() => _touchY = localPos.dy);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final double maxHeight = constraints.maxHeight;
-      final double itemHeight = maxHeight / _alphabet.length;
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onVerticalDragStart: (details) {
-          setState(() => _isDragging = true);
-          _handleUpdate(details.localPosition, maxHeight);
-        },
-        onVerticalDragUpdate: (details) => _handleUpdate(details.localPosition, maxHeight),
-        onVerticalDragEnd: (_) => setState(() { _isDragging = false; _lastLetter = ""; }),
-        child: Stack(
-          alignment: Alignment.centerRight,
-          clipBehavior: Clip.none,
-          children: [
-            ...List.generate(_alphabet.length, (i) {
-              double factor = 0.0;
-              if (_isDragging) {
-                double letterY = i * itemHeight + (itemHeight / 2);
-                double dist = (_touchY - letterY).abs();
-                if (dist < 150) factor = pow(1 - (dist / 150), 3).toDouble();
-              }
-              return Positioned(
-                top: i * itemHeight,
-                right: 15 + (80 * factor),
-                child: IgnorePointer(
-                  child: Text(_alphabet[i],
-                    style: TextStyle(
-                      fontSize: 10 + (25 * factor),
-                      color: factor > 0.2 ? Colors.white : Colors.white24,
-                      fontWeight: factor > 0.2 ? FontWeight.w900 : FontWeight.normal,
-                    ),
-                  ),
-                ),
-              );
-            }),
-            if (_isDragging && _lastLetter.isNotEmpty)
-              Positioned(
-                top: _touchY - 60, right: 100,
-                child: Container(
-                  width: 70, height: 70, alignment: Alignment.center,
-                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), shape: BoxShape.circle, border: Border.all(color: Colors.white24)),
-                  child: Text(_lastLetter, style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold)),
-                ),
-              ),
-          ],
-        ),
-      );
-    });
   }
 }
 
+// PAINTER: Ini rahasia performa tinggi
+class SidebarPainter extends CustomPainter {
+  final List<String> alphabet;
+  final Offset? touchPos;
+
+  SidebarPainter({required this.alphabet, required this.touchPos});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    double itemHeight = size.height / alphabet.length;
+    
+    for (int i = 0; i < alphabet.length; i++) {
+      double letterY = i * itemHeight + (itemHeight / 2);
+      double factor = 0.0;
+
+      if (touchPos != null) {
+        double dist = (touchPos!.dy - letterY).abs();
+        if (dist < 120) {
+          factor = pow(1.0 - (dist / 120).clamp(0.0, 1.0), 3).toDouble();
+        }
+      }
+
+      // Gambar Teks secara primitif
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: alphabet[i],
+          style: TextStyle(
+            color: factor > 0.2 ? Colors.white : Colors.white24,
+            fontSize: 10 + (20 * factor),
+            fontWeight: factor > 0.2 ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      // Hitung posisi x (efek melengkung)
+      double xPos = size.width - 20 - (60 * factor);
+      textPainter.paint(canvas, Offset(xPos - textPainter.width / 2, letterY - textPainter.height / 2));
+      
+      // Gambar Bubble besar jika sedang disentuh
+      if (factor > 0.8 && touchPos != null) {
+         _drawBubble(canvas, alphabet[i], touchPos!.dy);
+      }
+    }
+  }
+
+  void _drawBubble(Canvas canvas, String letter, double y) {
+    final paint = Paint()..color = Colors.white.withValues(alpha: 0.2)..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(-60, y), 35, paint);
+    
+    final tp = TextPainter(
+      text: TextSpan(text: letter, style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(-60 - tp.width/2, y - tp.height/2));
+  }
+
+  @override
+  bool shouldRepaint(SidebarPainter oldDelegate) => touchPos != oldDelegate.touchPos;
+}
+
+// AppListItem tetap sama
 class AppListItem extends StatelessWidget {
   final AppInfo app;
   const AppListItem({super.key, required this.app});

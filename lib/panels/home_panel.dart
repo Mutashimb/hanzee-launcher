@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:battery_plus/battery_plus.dart';
-import 'package:installed_apps/app_category.dart';
-import 'package:installed_apps/platform_type.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import '../hanzee_face.dart';
 import 'package:installed_apps/app_info.dart';
-import 'package:installed_apps/installed_apps.dart'; // Tambahkan ini
+import 'package:installed_apps/installed_apps.dart';
 
 class HomePanel extends StatelessWidget {
   final Duration screenTime;
@@ -26,7 +24,7 @@ class HomePanel extends StatelessWidget {
     required this.watchedPackages,
     required this.habitUsageData,
     required this.allApps,
-    required this.motivationText, // Masukkan ke constructor
+    required this.motivationText,
     required this.onUpdateMotivation,
     required this.quickApps,
     required this.isInitialLoading,
@@ -53,11 +51,70 @@ class HomePanel extends StatelessWidget {
               controller: controller,
               autofocus: true,
               style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w300),
-              decoration: const InputDecoration(border: InputBorder.none, hintText: "Enter text..."),
+              decoration: const InputDecoration(
+                border: InputBorder.none, 
+                hintText: "Enter text...",
+                hintStyle: TextStyle(color: Colors.white10),
+              ),
               onSubmitted: (val) {
                 onUpdateMotivation(val);
                 Navigator.pop(context);
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHabitAlert(BuildContext context) {
+  // 1. Cari aplikasi pertama yang BELUM selesai (usage < 5 menit)
+    String? activePkg;
+    
+    for (String pkg in watchedPackages) {
+      int usage = habitUsageData[pkg] ?? 0;
+      if (usage < 5) { // 5 adalah goalMinutes sesuai standar HabitDot kita
+        activePkg = pkg;
+        break; // Berhenti di aplikasi pertama yang ketemu belum selesai
+      }
+    }
+
+    // 2. Jika semua habit sudah selesai, jangan tampilkan alert (layar jadi bersih)
+    if (activePkg == null) return const SizedBox(height: 40);
+
+    // 3. Ambil info aplikasi yang aktif tersebut
+    final app = allApps.firstWhere(
+      (a) => a.packageName == activePkg,
+      orElse: () => allApps.first,
+    );
+
+    return InkWell(
+      onTap: () {
+        InstalledApps.startApp(activePkg!);
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          // Berikan sedikit border agar terlihat bisa ditekan
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          borderRadius: BorderRadius.circular(20),
+          // Tambahkan sedikit background transparan agar lebih "clickable"
+          color: Colors.white.withValues(alpha: 0.02),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.bolt, color: Colors.white24, size: 14), // Icon petir untuk kesan 'action'
+            const SizedBox(width: 8),
+            Text(
+              "do your ${app.name.toLowerCase()} now?",
+              style: const TextStyle(
+                color: Colors.white70, // Lebih terang sedikit agar terbaca
+                fontSize: 12,
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w400,
+              ),
             ),
           ],
         ),
@@ -74,67 +131,44 @@ class HomePanel extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           HanZeeFace(screenTime: screenTime, taskCount: taskCount),
+          const SizedBox(height: 20),
+
+          if (!isInitialLoading && watchedPackages.isNotEmpty)
+            _buildHabitAlert(context)
+          else
+            const SizedBox(height: 35),
+
           const SizedBox(height: 40),
 
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: watchedPackages.map((pkg) {
-              // 1. CEK: Jika list aplikasi masih kosong, tampilkan placeholder saja
-                if (allApps.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8.0),
-                    child: SizedBox(width: 10, height: 10), // Kosongkan dulu
+            children: isInitialLoading 
+              ? [1, 2, 3].map((_) => const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8.0),
+                  child: SizedBox(width: 8, height: 8, child: CircularProgressIndicator(strokeWidth: 1, color: Colors.white10)),
+                )).toList()
+              : watchedPackages.map((pkg) {
+                  if (allApps.isEmpty) return const SizedBox();
+                  final app = allApps.firstWhere((a) => a.packageName == pkg, orElse: () => allApps.first);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: HabitDot(appName: app.name, usageMinutes: habitUsageData[pkg] ?? 0),
                   );
-                }
-
-                // 2. CARI APP: Pakai try-catch atau filter yang aman
-                final app = allApps.firstWhere(
-                  (a) => a.packageName == pkg,
-                  // FIX: Jangan pakai allApps.first jika ada risiko kosong
-                  orElse: () => AppInfo(
-                    name: "...",
-                    packageName: pkg,
-                    icon: null,
-                    versionName: "",
-                    versionCode: 0,
-                    platformType: PlatformType.flutter,
-                    installedTimestamp: 0,
-                    isSystemApp: false,
-                    isLaunchableApp: true,
-                    category: AppCategory.undefined,
-                  ),
-                );
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: HabitDot(
-                    appName: app.name,
-                    usageMinutes: habitUsageData[pkg] ?? 0,
-                  ),
-                );
-              }).toList(),
+                }).toList(),
           ),
 
-        const SizedBox(height: 40),
+          const SizedBox(height: 40),
 
-        // --- DIGITAL WELLBEING (PINDAHAN) ---
-        // Ditampilkan kecil dan elegan
-        Text(
-          "${screenTime.inHours}H ${screenTime.inMinutes % 60}M",
-          style: const TextStyle(
-            color: Colors.white, 
-            fontSize: 16, 
-            letterSpacing: 2,
-            fontWeight: FontWeight.w500
+          Text(
+            "${screenTime.inHours}H ${screenTime.inMinutes % 60}M",
+            style: const TextStyle(color: Colors.white, fontSize: 16, letterSpacing: 2, fontWeight: FontWeight.w500),
           ),
-        ),
-        const Text(
-          "SCREEN TIME",
-          style: TextStyle(color: Colors.white54, fontSize: 8, letterSpacing: 2),
-        ),
+          const Text(
+            "SCREEN TIME",
+            style: TextStyle(color: Colors.white54, fontSize: 8, letterSpacing: 2),
+          ),
 
-        const SizedBox(height: 20),
-
+          const SizedBox(height: 20),
 
           FutureBuilder<int>(
             future: battery.batteryLevel,
@@ -145,13 +179,14 @@ class HomePanel extends StatelessWidget {
               );
             },
           ),
+          
           const SizedBox(height: 40),
           const DigitalClock(),
           const SizedBox(height: 40),
 
           Wrap(
             alignment: WrapAlignment.center,
-            spacing: 20, // Jarak antar nama aplikasi
+            spacing: 20,
             children: quickApps.map((pkg) {
               if (allApps.isEmpty) return const SizedBox();
               final app = allApps.firstWhere((a) => a.packageName == pkg, 
@@ -172,10 +207,10 @@ class HomePanel extends StatelessWidget {
             }).toList(),
           ),
 
-          const SizedBox(height: 40),
           const SizedBox(height: 60),
           InkWell(
             onLongPress: () => _showEditMotivation(context),
+            onTap: () => _showEditMotivation(context),
             borderRadius: BorderRadius.circular(4),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -226,10 +261,12 @@ class _DigitalClockState extends State<DigitalClock> {
     final DateTime now = DateTime.now();
     return Column(
       children: [
-        Text(DateFormat('HH:mm').format(now),
+        Text(
+          DateFormat('HH:mm').format(now),
           style: const TextStyle(color: Colors.white, fontSize: 90, fontWeight: FontWeight.w400, letterSpacing: -2),
         ),
-        Text(DateFormat('EEEE, MMMM d').format(now).toUpperCase(),
+        Text(
+          DateFormat('EEEE, MMMM d').format(now).toUpperCase(),
           style: const TextStyle(color: Colors.white, fontSize: 14, letterSpacing: 4, fontWeight: FontWeight.w500),
         ),
       ],
@@ -252,7 +289,6 @@ class HabitDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     double progress = (usageMinutes / goalMinutes).clamp(0.0, 1.0);
-    // Sekarang isFinished berarti "Sudah Aman", maka tandanya harus MATI/REDUP
     bool isFinished = progress >= 1.0; 
 
     return Tooltip(
@@ -266,15 +302,12 @@ class HabitDot extends StatelessWidget {
             height: 10,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              // TERBALIK: Jika sudah selesai (isFinished), buat jadi transparan/redup
-              // Jika belum selesai, buat menyala (Colors.white)
               color: isFinished ? Colors.transparent : Colors.white,
               border: Border.all(
                 color: isFinished ? Colors.white10 : Colors.white,
                 width: 1.5,
               ),
               boxShadow: !isFinished ? [
-                // Glow/bayangan hanya muncul saat BELUM selesai (sebagai pengingat)
                 BoxShadow(
                   color: Colors.white.withValues(alpha: 0.3),
                   blurRadius: 8,
@@ -289,7 +322,6 @@ class HabitDot extends StatelessWidget {
             style: TextStyle(
               fontSize: 9,
               fontWeight: FontWeight.bold,
-              // Teks juga meredup jika sudah selesai
               color: isFinished ? Colors.white10 : Colors.white38,
             ),
           ),
