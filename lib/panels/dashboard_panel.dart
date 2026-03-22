@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:installed_apps/app_category.dart';
-import 'package:installed_apps/platform_type.dart';
 import 'package:intl/intl.dart';
 import 'package:installed_apps/app_info.dart';
-import 'package:installed_apps/installed_apps.dart';
 
 class DashboardPanel extends StatefulWidget {
   final List<Map<String, dynamic>> tasks;
@@ -345,26 +342,67 @@ class _DashboardItemState extends State<DashboardItem> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.black,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 20, left: 30, right: 30, top: 30),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("EDIT TASK", style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
-            TextField(controller: titleController, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500), decoration: const InputDecoration(hintText: "Title", border: InputBorder.none), autofocus: true),
-            TextField(controller: descController, maxLines: null, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w300), decoration: const InputDecoration(hintText: "Add description...", border: InputBorder.none)),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                TextButton(onPressed: () { Navigator.pop(context); widget.onDelete(); }, child: const Text("DELETE", style: TextStyle(color: Colors.redAccent, fontSize: 12))),
-                TextButton(onPressed: () { widget.onEdit(titleController.text, descController.text); Navigator.pop(context); }, child: const Text("SAVE", style: TextStyle(color: Colors.white))),
-              ],
-            )
-          ],
-        ),
-      ),
+      // Gunakan 'useSafeArea' agar lebih aman di HP berponi
+      useSafeArea: true, 
+      builder: (context) {
+        // Kita gunakan Padding dinamis di sini, tapi konten di dalamnya dibungkus 
+        // agar tidak melakukan kalkulasi layout yang berat.
+        return Padding(
+          // MediaQuery diletakkan di sini untuk menangkap perubahan tinggi keyboard
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(30),
+            // SingleChildScrollView mencegah error 'pixel overflow' saat keyboard muncul
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("EDIT TASK", 
+                    style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)
+                  ),
+                  TextField(
+                    controller: titleController,
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
+                    decoration: const InputDecoration(hintText: "Title", border: InputBorder.none),
+                    autofocus: true,
+                    // Optimasi: Matikan autocorrect jika tidak perlu untuk kurangi beban
+                    autocorrect: false, 
+                  ),
+                  TextField(
+                    controller: descController,
+                    maxLines: null,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w300),
+                    decoration: const InputDecoration(hintText: "Add description...", border: InputBorder.none),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onDelete();
+                        },
+                        child: const Text("DELETE", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          widget.onEdit(titleController.text, descController.text);
+                          Navigator.pop(context);
+                        },
+                        child: const Text("SAVE", style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                  // Tambahkan sedikit ruang di paling bawah agar tidak nempel banget sama keyboard
+                  const SizedBox(height: 20), 
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

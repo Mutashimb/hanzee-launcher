@@ -154,74 +154,103 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Penting: Scaffold di Main harus false agar DashboardPanel yang mengontrol insets
-      resizeToAvoidBottomInset: false,
-      body: GestureDetector(
-        onDoubleTap: () => platform.invokeMethod('lockScreen'),
-        onVerticalDragUpdate: (details) {
-          if (details.delta.dy > 10) {
-            final x = details.globalPosition.dx;
-            final width = MediaQuery.of(context).size.width;
-            if (x < width / 2) {
-              platform.invokeMethod('openNotifications');
-            } else {
-              platform.invokeMethod('openQuickSettings');
-            }
+    return PopScope(
+      canPop: false, // Mencegah aplikasi keluar/back secara default
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+
+        // Jika keyboard terbuka, tutup dulu
+        if (FocusManager.instance.primaryFocus?.hasFocus ?? false) {
+          FocusManager.instance.primaryFocus?.unfocus();
+          return;
+        }
+
+        // Jika di halaman Dashboard (index 0) dan keyboard tertutup,
+        // kirim aplikasi ke background daripada menutupnya.
+        if (_pageController.page == 0) {
+          try {
+            await platform.invokeMethod('sendToBackground');
+          } catch (e) {
+            debugPrint("Failed to send to background: $e");
           }
-        },
-        child: PageView(
-          controller: _pageController,
-          onPageChanged: _handlePageChange, // OPTIMASI: Pengganti listener controller
-          physics: const BouncingScrollPhysics(),
-          children: [
-            // Dashboard Panel
-            ValueListenableBuilder(
-              valueListenable: _screenTimeNotifier,
-              builder: (context, screenTime, _) {
-                return DashboardPanel(
-                  tasks: _localTasks,
-                  screenTime: screenTime,
-                  onTasksChanged: _updateTasks,
-                  watchedPackages: _watchedPackages,
-                  allApps: _installedApps,
-                  onToggleWatch: _toggleWatchApp,
-                  quickApps: _quickApps,
-                  onToggleQuickApp: _toggleQuickApp,
-                  isInitialLoading: _isInitialLoading,
-                );
+        } else {
+          // Jika sedang di halaman lain, balikkan ke Home (index 1)
+          _pageController.animateToPage(
+            1,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        }
+      },
+      child: Scaffold(
+        // Penting: Scaffold di Main harus false agar DashboardPanel yang mengontrol insets
+        resizeToAvoidBottomInset: false,
+        body: GestureDetector(
+          onDoubleTap: () => platform.invokeMethod('lockScreen'),
+          onVerticalDragUpdate: (details) {
+            if (details.delta.dy > 10) {
+              final x = details.globalPosition.dx;
+              final width = MediaQuery.of(context).size.width;
+              if (x < width / 2) {
+                platform.invokeMethod('openNotifications');
+              } else {
+                platform.invokeMethod('openQuickSettings');
               }
-            ),
-
-            // Home Panel
-            ValueListenableBuilder(
-              valueListenable: _screenTimeNotifier,
-              builder: (context, screenTime, _) {
-                return ValueListenableBuilder(
-                  valueListenable: _habitUsageNotifier,
-                  builder: (context, habitData, _) {
-                    return HomePanel(
-                      screenTime: screenTime,
-                      taskCount: _localTasks.length,
-                      watchedPackages: _watchedPackages,
-                      habitUsageData: habitData,
-                      allApps: _installedApps,
-                      motivationText: _motivationText,
-                      onUpdateMotivation: _updateMotivation,
-                      quickApps: _quickApps,
-                      isInitialLoading: _isInitialLoading,
-                    );
-                  }
-                );
-              }
-            ),
-
-            // App List Panel
-            AppListPanel(
-              apps: _installedApps,
-              isInitialLoading: _isInitialLoading,
-            ),
-          ],
+            }
+          },
+          child: PageView(
+            controller: _pageController,
+            onPageChanged: _handlePageChange, // OPTIMASI: Pengganti listener controller
+            physics: const BouncingScrollPhysics(),
+            children: [
+              // Dashboard Panel
+              ValueListenableBuilder(
+                valueListenable: _screenTimeNotifier,
+                builder: (context, screenTime, _) {
+                  return DashboardPanel(
+                    tasks: _localTasks,
+                    screenTime: screenTime,
+                    onTasksChanged: _updateTasks,
+                    watchedPackages: _watchedPackages,
+                    allApps: _installedApps,
+                    onToggleWatch: _toggleWatchApp,
+                    quickApps: _quickApps,
+                    onToggleQuickApp: _toggleQuickApp,
+                    isInitialLoading: _isInitialLoading,
+                  );
+                }
+              ),
+      
+              // Home Panel
+              ValueListenableBuilder(
+                valueListenable: _screenTimeNotifier,
+                builder: (context, screenTime, _) {
+                  return ValueListenableBuilder(
+                    valueListenable: _habitUsageNotifier,
+                    builder: (context, habitData, _) {
+                      return HomePanel(
+                        screenTime: screenTime,
+                        taskCount: _localTasks.length,
+                        watchedPackages: _watchedPackages,
+                        habitUsageData: habitData,
+                        allApps: _installedApps,
+                        motivationText: _motivationText,
+                        onUpdateMotivation: _updateMotivation,
+                        quickApps: _quickApps,
+                        isInitialLoading: _isInitialLoading,
+                      );
+                    }
+                  );
+                }
+              ),
+      
+              // App List Panel
+              AppListPanel(
+                apps: _installedApps,
+                isInitialLoading: _isInitialLoading,
+              ),
+            ],
+          ),
         ),
       ),
     );

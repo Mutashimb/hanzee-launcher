@@ -41,19 +41,21 @@ class MainActivity: FlutterActivity() {
                     expandStatusBar("expandSettingsPanel")
                     result.success(null)    
                 }
-                // --- PINDAHKAN LOGIC LOCKSCREEN KE SINI ---
                 "lockScreen" -> {
                     val service = HanZeeAccessibilityService.instance
                     if (service != null) {
                         service.lockScreen()
                         result.success(true)
                     } else {
-                        // Jika belum aktif, buka settings Accessibility
                         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                         startActivity(intent)
                         result.error("SERVICE_OFF", "Mohon aktifkan aksesibilitas HanZee", null)
                     }
+                }
+                "sendToBackground" -> {
+                    moveTaskToBack(true)
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:math';
-import 'package:sensors_plus/sensors_plus.dart';
 
 enum KawaiiMood { happy, excited, surprised, thinking, sleepy }
 
@@ -43,13 +42,6 @@ class _HanZeeFaceState extends State<HanZeeFace> with TickerProviderStateMixin {
     _startBlinkCycle();
     _startOrganicLogic();
     _resetSleepTimer();
-
-    _accelSub = accelerometerEventStream().listen((event) {
-      if (!mounted) return;
-      if (event.x.abs() > 30 || event.y.abs() > 30) {
-        _setMood(KawaiiMood.excited, duration: const Duration(seconds: 3));
-      }
-    });
   }
 
   void _setMood(KawaiiMood mood, {Duration? duration}) {
