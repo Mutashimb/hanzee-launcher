@@ -10,12 +10,11 @@ class DashboardPanel extends StatefulWidget {
   final List<Map<String, dynamic>> tasks;
   final Duration screenTime;
   final Function(List<Map<String, dynamic>>) onTasksChanged;
-  
   final List<String> watchedPackages;
   final List<AppInfo> allApps;
   final Function(String) onToggleWatch;
-  final List<String> quickApps; // Tambahkan ini
-  final Function(String) onToggleQuickApp; // Tambahkan ini
+  final List<String> quickApps;
+  final Function(String) onToggleQuickApp;
   final bool isInitialLoading;
 
   const DashboardPanel({
@@ -26,8 +25,8 @@ class DashboardPanel extends StatefulWidget {
     required this.watchedPackages,
     required this.allApps,
     required this.onToggleWatch,
-    required this.quickApps, // Tambahkan ini
-    required this.onToggleQuickApp, // Tambahkan ini
+    required this.quickApps,
+    required this.onToggleQuickApp,
     required this.isInitialLoading,
   });
 
@@ -36,349 +35,291 @@ class DashboardPanel extends StatefulWidget {
 }
 
 class _DashboardPanelState extends State<DashboardPanel> with AutomaticKeepAliveClientMixin {
-  final TextEditingController _taskController = TextEditingController();
+  late Map<String, AppInfo> _appLookupMap;
 
   @override
   bool get wantKeepAlive => true;
 
   @override
-  void dispose() {
-    _taskController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _generateAppMap();
   }
 
-  // --- LOGIKA TASK ---
-  void _addTask(String value) {
-    if (value.trim().isNotEmpty) {
-      final newTasks = List<Map<String, dynamic>>.from(widget.tasks)
-        ..add({'title': value.trim(), 'description': ''});
-      widget.onTasksChanged(newTasks);
-      _taskController.clear();
+  @override
+  void didUpdateWidget(DashboardPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.allApps != oldWidget.allApps) {
+      _generateAppMap();
     }
   }
 
-  void _deleteTask(int index) {
-    final newTasks = List<Map<String, dynamic>>.from(widget.tasks);
-    newTasks.removeAt(index);
-    widget.onTasksChanged(newTasks);
-    HapticFeedback.mediumImpact();
+  void _generateAppMap() {
+    _appLookupMap = {for (var app in widget.allApps) app.packageName: app};
   }
 
-  void _editTask(int index, String newTitle, String newDesc) {
-    final newTasks = List<Map<String, dynamic>>.from(widget.tasks);
-    newTasks[index] = {'title': newTitle, 'description': newDesc};
-    widget.onTasksChanged(newTasks);
-  }
-
-
-  // Dialog Pemilih Aplikasi yang diperbarui (Generic)
-  void _showAppSelector({required bool isHabit}) {
-  // Kita buat list lokal untuk menampung hasil filter
-  List<AppInfo> filteredApps = widget.allApps;
-
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.black,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (context) => StatefulBuilder( // Tambahkan StatefulBuilder agar UI modal bisa update
-      builder: (context, setModalState) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (_, scrollController) => Column(
-            children: [
-              // HEADER TEXT
-              Padding(
-                padding: const EdgeInsets.only(top: 20.0, bottom: 10.0),
-                child: Text(
-                  isHabit ? "SELECT HABIT APP" : "SELECT QUICK ACCESS APP",
-                  style: const TextStyle(
-                    letterSpacing: 2, 
-                    color: Colors.white38, 
-                    fontSize: 10, 
-                    fontWeight: FontWeight.bold
-                  ),
-                ),
-              ),
-
-              // --- SEARCH BAR ---
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 15),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: TextField(
-                    autofocus: false,
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
-                    onChanged: (value) {
-                      // Logika pencarian aplikasi
-                      setModalState(() {
-                        filteredApps = widget.allApps
-                            .where((app) => app.name
-                                .toLowerCase()
-                                .contains(value.toLowerCase()))
-                            .toList();
-                      });
-                    },
-                    decoration: const InputDecoration(
-                      hintText: "Search apps...",
-                      hintStyle: TextStyle(color: Colors.white24, fontSize: 14),
-                      border: InputBorder.none,
-                      icon: Icon(Icons.search, color: Colors.white24, size: 20),
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              // LIST APLIKASI
-              Expanded(
-                child: filteredApps.isEmpty
-                    ? const Center(
-                        child: Text("No apps found", 
-                        style: TextStyle(color: Colors.white24)))
-                    : ListView.builder(
-                        controller: scrollController,
-                        itemCount: filteredApps.length,
-                        itemBuilder: (context, index) {
-                          final app = filteredApps[index];
-                          final bool isSelected = isHabit
-                              ? widget.watchedPackages.contains(app.packageName)
-                              : widget.quickApps.contains(app.packageName);
-
-                          return ListTile(
-                            leading: Container(
-                              width: 2, 
-                              height: 20, 
-                              color: isSelected ? Colors.white : Colors.white10
-                            ),
-                            title: Text(
-                              app.name.toLowerCase(),
-                              style: TextStyle(
-                                color: isSelected ? Colors.white : Colors.white54,
-                                fontWeight: FontWeight.w300,
-                              ),
-                            ),
-                            trailing: isSelected
-                                ? const Icon(Icons.check, color: Colors.white, size: 16)
-                                : null,
-                            onTap: () {
-                              if (isHabit) {
-                                widget.onToggleWatch(app.packageName);
-                              } else {
-                                widget.onToggleQuickApp(app.packageName);
-                              }
-                              Navigator.pop(context);
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        );
-      },
-    ),
-  );
-}
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return Padding(
-      padding: const EdgeInsets.only(left: 40.0, right: 40.0, top: 80.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 40),
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
+  void _showSettingsPanel() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.8,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) => StatefulBuilder(
+          builder: (context, setModalState) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(30),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionHeader("DAILY HABITS"),
-                  if (widget.isInitialLoading)
-                      const Text("scanning habits...", style: TextStyle(color: Colors.white54, fontSize: 12))
-                    else if (widget.watchedPackages.isEmpty)
-                      const Text("No apps on watchlist.", style: TextStyle(color: Colors.white54, fontSize: 12))
-                    else
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: widget.watchedPackages.map((pkg) {
-                        // FIX: Memberikan nilai default lengkap untuk AppInfo jika tidak ditemukan
-                        final app = widget.allApps.firstWhere(
-                          (a) => a.packageName == pkg,
-                          orElse: () => AppInfo(
-                            name: "unknown",
-                            icon: null,
-                            packageName: pkg,
-                            versionName: "1.0",
-                            versionCode: 1,
-                            platformType: PlatformType.flutter,
-                            installedTimestamp: 0,
-                            isSystemApp: false,
-                            isLaunchableApp: true,
-                            category: AppCategory.undefined,
-                          ),
-                        );
-                        
-                        return GestureDetector(
-                          onLongPress: () {
-                            widget.onToggleWatch(pkg);
-                            HapticFeedback.heavyImpact();
-                          },
-                          onTap: () => InstalledApps.startApp(pkg),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.white10),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              app.name.toLowerCase(),
-                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  TextButton.icon(
-                    onPressed: () => _showAppSelector(isHabit: true),
-                    icon: const Icon(Icons.add, size: 14, color: Colors.white24),
-                    label: const Text("add reminder", style: TextStyle(color: Colors.white30, fontSize: 16)),
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  const Text("DASHBOARD SETTINGS", style: TextStyle(letterSpacing: 2, color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 30),
+                  _buildSettingsSection(
+                    title: "DAILY HABITS",
+                    packages: widget.watchedPackages,
+                    onAdd: () => _showAppSelector(isHabit: true, onUpdate: () => setModalState(() {})),
+                    onRemove: (pkg) {
+                      widget.onToggleWatch(pkg);
+                      setModalState(() {});
+                    },
                   ),
                   const SizedBox(height: 40),
-
-                  _buildSectionHeader("QUICK ACCESS"),
-                    if (widget.isInitialLoading)
-                      const Text("preparing shortcuts...", style: TextStyle(color: Colors.white54, fontSize: 12))
-                    else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: widget.quickApps.map((pkg) {
-                          // Menggunakan logika pencarian aman (Safe Search) sesuai acuanmu
-                          final app = widget.allApps.firstWhere(
-                            (a) => a.packageName == pkg,
-                            orElse: () => AppInfo(
-                              name: "unknown",
-                              icon: null,
-                              packageName: pkg,
-                              versionName: "1.0",
-                              versionCode: 1,
-                              platformType: PlatformType.flutter,
-                              installedTimestamp: 0,
-                              isSystemApp: false,
-                              isLaunchableApp: true,
-                              category: AppCategory.undefined,
-                            ),
-                          );
-
-                          return GestureDetector(
-                            // Long press untuk menghapus aplikasi dari Quick Access
-                            onLongPress: () {
-                              widget.onToggleQuickApp(pkg);
-                              HapticFeedback.heavyImpact();
-                            },
-                            // Tap untuk membuka aplikasi
-                            onTap: () => InstalledApps.startApp(pkg),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.white10),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                app.name.toLowerCase(),
-                                style: const TextStyle(
-                                  color: Colors.white, 
-                                  fontSize: 13, 
-                                  fontWeight: FontWeight.w500
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-
-                    // Tombol tambah aplikasi tetap di bawah Wrap
-                    TextButton.icon(
-                    onPressed: () => _showAppSelector(isHabit: false),
-                    icon: const Icon(Icons.add, size: 14, color: Colors.white24),
-                    label: const Text("Add App", style: TextStyle(color: Colors.white30, fontSize: 16)),
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  _buildSettingsSection(
+                    title: "QUICK ACCESS",
+                    packages: widget.quickApps,
+                    onAdd: () => _showAppSelector(isHabit: false, onUpdate: () => setModalState(() {})),
+                    onRemove: (pkg) {
+                      widget.onToggleQuickApp(pkg);
+                      setModalState(() {});
+                    },
                   ),
-                  const SizedBox(height: 40),
-
-                  _buildSectionHeader("FOCUS LIST"),
-                  TextField(
-                    controller: _taskController,
-                    onSubmitted: _addTask,
-                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w300),
-                    decoration: const InputDecoration(
-                      hintText: "add a task...",
-                      hintStyle: TextStyle(color: Colors.white54),
-                      border: InputBorder.none,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (widget.tasks.isEmpty)
-                    const Text("No tasks for today.", style: TextStyle(color: Colors.white38))
-                  else
-                    ...widget.tasks.asMap().entries.map((entry) {
-                      int index = entry.key;
-                      Map<String, dynamic> task = entry.value;
-                      return DashboardItem(
-                        title: task['title'] ?? 'No Title',
-                        description: task['description'] ?? '',
-                        isAction: true,
-                        onDelete: () => _deleteTask(index),
-                        onEdit: (newTitle, newDesc) => _editTask(index, newTitle, newDesc),
-                      );
-                    }),
-                  const SizedBox(height: 80),
                 ],
               ),
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildSettingsSection({required String title, required List<String> packages, required VoidCallback onAdd, required Function(String) onRemove}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("DASHBOARD", style: TextStyle(letterSpacing: 4, color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 8),
-        Text(DateFormat('MMMM d').format(DateTime.now()).toUpperCase(),
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w300)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(title, style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+            IconButton(onPressed: onAdd, icon: const Icon(Icons.add_circle_outline, color: Colors.white24, size: 20)),
+          ],
+        ),
+        if (packages.isEmpty)
+          const Text("None selected", style: TextStyle(color: Colors.white10, fontSize: 12))
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: packages.map((pkg) {
+              final app = _appLookupMap[pkg];
+              return Container(
+                padding: const EdgeInsets.only(left: 12, right: 4, top: 4, bottom: 4),
+                decoration: BoxDecoration(border: Border.all(color: Colors.white10), borderRadius: BorderRadius.circular(4)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(app?.name.toLowerCase() ?? "unknown", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 14, color: Colors.white24),
+                      onPressed: () => onRemove(pkg),
+                    )
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
       ],
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Text(title, style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 2.5)),
+  void _showAppSelector({required bool isHabit, required VoidCallback onUpdate}) {
+    List<AppInfo> filteredApps = List.from(widget.allApps);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => DraggableScrollableSheet(
+          expand: false,
+          builder: (_, scrollController) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: TextField(
+                  style: const TextStyle(color: Colors.white),
+                  onChanged: (v) => setModalState(() => filteredApps = widget.allApps.where((a) => a.name.toLowerCase().contains(v.toLowerCase())).toList()),
+                  decoration: const InputDecoration(hintText: "Search apps...", hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none, icon: Icon(Icons.search, color: Colors.white24)),
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: filteredApps.length,
+                  itemExtent: 50,
+                  itemBuilder: (context, i) {
+                    final app = filteredApps[i];
+                    return ListTile(
+                      title: Text(app.name.toLowerCase(), style: const TextStyle(color: Colors.white, fontSize: 14)),
+                      onTap: () {
+                        isHabit ? widget.onToggleWatch(app.packageName) : widget.onToggleQuickApp(app.packageName);
+                        onUpdate();
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      resizeToAvoidBottomInset: false,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.only(left: 40.0, right: 20.0, top: 80.0),
+            sliver: SliverToBoxAdapter(child: _DashboardHeader(onSettingsPressed: _showSettingsPanel)),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 60)),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 40.0),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("FOCUS LIST", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 2.5)),
+                  TaskInputSection(onSubmitted: (val) {
+                    if (val.trim().isNotEmpty) {
+                      widget.onTasksChanged(List<Map<String, dynamic>>.from(widget.tasks)..add({'title': val.trim(), 'description': ''}));
+                    }
+                  }),
+                  const SizedBox(height: 10),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 40.0),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final task = widget.tasks[index];
+                  return DashboardItem(
+                    key: ValueKey(task['title']),
+                    title: task['title'] ?? '',
+                    description: task['description'] ?? '',
+                    isAction: true,
+                    onDelete: () {
+                      widget.onTasksChanged(List<Map<String, dynamic>>.from(widget.tasks)..removeAt(index));
+                      HapticFeedback.mediumImpact();
+                    },
+                    onEdit: (t, d) {
+                      final newTasks = List<Map<String, dynamic>>.from(widget.tasks);
+                      newTasks[index] = {'title': t, 'description': d};
+                      widget.onTasksChanged(newTasks);
+                    },
+                  );
+                },
+                childCount: widget.tasks.length,
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 120)),
+        ],
+      ),
     );
   }
 }
 
-// --- DashboardItem Widget ---
+class _DashboardHeader extends StatelessWidget {
+  final VoidCallback onSettingsPressed;
+  const _DashboardHeader({required this.onSettingsPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("DASHBOARD", style: TextStyle(letterSpacing: 4, color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text(DateFormat('MMMM d').format(DateTime.now()).toUpperCase(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w300)),
+          ],
+        ),
+        IconButton(onPressed: onSettingsPressed, icon: const Icon(Icons.tune, color: Colors.white30, size: 24)),
+      ],
+    );
+  }
+}
+
+class TaskInputSection extends StatefulWidget {
+  final Function(String) onSubmitted;
+  const TaskInputSection({super.key, required this.onSubmitted});
+
+  @override
+  State<TaskInputSection> createState() => _TaskInputSectionState();
+}
+
+class _TaskInputSectionState extends State<TaskInputSection> {
+  late TextEditingController _controller;
+  late FocusNode _focusNode;
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _focusNode = FocusNode();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        onSubmitted: (v) {
+          widget.onSubmitted(v);
+          _controller.clear();
+          _focusNode.requestFocus();
+        },
+        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w300),
+        decoration: const InputDecoration(hintText: "add a task...", hintStyle: TextStyle(color: Colors.white54), border: InputBorder.none),
+      ),
+    );
+  }
+}
+
 class DashboardItem extends StatefulWidget {
   final String title;
   final String description;
@@ -386,14 +327,7 @@ class DashboardItem extends StatefulWidget {
   final VoidCallback onDelete;
   final Function(String, String) onEdit;
 
-  const DashboardItem({
-    super.key,
-    required this.title,
-    required this.description,
-    required this.isAction,
-    required this.onDelete,
-    required this.onEdit,
-  });
+  const DashboardItem({super.key, required this.title, required this.description, required this.isAction, required this.onDelete, required this.onEdit});
 
   @override
   State<DashboardItem> createState() => _DashboardItemState();
@@ -412,45 +346,20 @@ class _DashboardItemState extends State<DashboardItem> {
       isScrollControlled: true,
       backgroundColor: Colors.black,
       builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-          left: 30, right: 30, top: 30,
-        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 20, left: 30, right: 30, top: 30),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text("EDIT TASK", style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
-            TextField(
-              controller: titleController,
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
-              decoration: const InputDecoration(hintText: "Title", border: InputBorder.none),
-              autofocus: true,
-            ),
-            TextField(
-              controller: descController,
-              maxLines: null,
-              style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w300),
-              decoration: const InputDecoration(hintText: "Add description...", border: InputBorder.none),
-            ),
+            TextField(controller: titleController, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500), decoration: const InputDecoration(hintText: "Title", border: InputBorder.none), autofocus: true),
+            TextField(controller: descController, maxLines: null, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w300), decoration: const InputDecoration(hintText: "Add description...", border: InputBorder.none)),
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    widget.onDelete();
-                  },
-                  child: const Text("DELETE", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
-                ),
-                TextButton(
-                  onPressed: () {
-                    widget.onEdit(titleController.text, descController.text);
-                    Navigator.pop(context);
-                  },
-                  child: const Text("SAVE", style: TextStyle(color: Colors.white)),
-                ),
+                TextButton(onPressed: () { Navigator.pop(context); widget.onDelete(); }, child: const Text("DELETE", style: TextStyle(color: Colors.redAccent, fontSize: 12))),
+                TextButton(onPressed: () { widget.onEdit(titleController.text, descController.text); Navigator.pop(context); }, child: const Text("SAVE", style: TextStyle(color: Colors.white))),
               ],
             )
           ],
@@ -462,11 +371,7 @@ class _DashboardItemState extends State<DashboardItem> {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () {
-        if (widget.description.isNotEmpty) {
-          setState(() => _isExpanded = !_isExpanded);
-        }
-      },
+      onTap: () { if (widget.description.isNotEmpty) setState(() => _isExpanded = !_isExpanded); },
       onLongPress: () => _showEditSheet(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 14.0),
@@ -477,26 +382,17 @@ class _DashboardItemState extends State<DashboardItem> {
             const SizedBox(width: 20),
             Expanded(
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(widget.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500)),
-                    if (_isExpanded && widget.description.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(widget.description, style: const TextStyle(color: Colors.white54, fontSize: 14, fontWeight: FontWeight.w300)),
-                      ),
-                    if (!_isExpanded && widget.description.isNotEmpty && widget.isAction)
-                      const Text("tap to see description...", style: TextStyle(color: Colors.white10, fontSize: 10)),
-                    if (!widget.isAction)
-                      Text(widget.description, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                  ]
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500)),
+                  if (_isExpanded && widget.description.isNotEmpty)
+                    Padding(padding: const EdgeInsets.only(top: 8.0), child: Text(widget.description, style: const TextStyle(color: Colors.white54, fontSize: 14, fontWeight: FontWeight.w300))),
+                  if (!_isExpanded && widget.description.isNotEmpty && widget.isAction)
+                    const Text("tap to see description...", style: TextStyle(color: Colors.white10, fontSize: 10)),
+                ],
               ),
             ),
-            if (widget.isAction)
-              IconButton(
-                icon: const Icon(Icons.edit_note, color: Colors.white10, size: 20),
-                onPressed: () => _showEditSheet(context),
-              ),
+            if (widget.isAction) IconButton(icon: const Icon(Icons.edit_note, color: Colors.white10, size: 20), onPressed: () => _showEditSheet(context)),
           ],
         ),
       ),

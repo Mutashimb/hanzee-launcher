@@ -1,10 +1,8 @@
-package com.example.hanzee_launcher // <--- WAJIB ada kata 'package' di sini
+package com.example.hanzee_launcher
 
-import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
-import android.os.Process
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -12,9 +10,11 @@ import io.flutter.plugin.common.MethodChannel
 import java.util.*
 import android.annotation.SuppressLint
 import java.lang.reflect.Method
+import android.accessibilityservice.AccessibilityService
+import android.view.accessibility.AccessibilityEvent
+import android.os.Build
 
 class MainActivity: FlutterActivity() {
-    // Pastikan CHANNEL ini sama dengan yang ada di main.dart
     private val CHANNEL = "com.example.hanzee/usage"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -31,15 +31,29 @@ class MainActivity: FlutterActivity() {
                         result.success(getAppUsage(packageName))
                     } else {
                         result.error("INVALID_PACKAGE", "Package name is null", null)
-                        }
                     }
+                }
                 "openNotifications" -> {
-                        expandStatusBar("expandNotificationsPanel")
-                        result.success(null)
-                    }
+                    expandStatusBar("expandNotificationsPanel")
+                    result.success(null)
+                }
                 "openQuickSettings" -> {
-                        expandStatusBar("expandSettingsPanel")
-                        result.success(null)    
+                    expandStatusBar("expandSettingsPanel")
+                    result.success(null)    
+                }
+                // --- PINDAHKAN LOGIC LOCKSCREEN KE SINI ---
+                "lockScreen" -> {
+                    val service = HanZeeAccessibilityService.instance
+                    if (service != null) {
+                        service.lockScreen()
+                        result.success(true)
+                    } else {
+                        // Jika belum aktif, buka settings Accessibility
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        startActivity(intent)
+                        result.error("SERVICE_OFF", "Mohon aktifkan aksesibilitas HanZee", null)
+                    }
                 }
                 else -> result.notImplemented()
             }
@@ -83,19 +97,45 @@ class MainActivity: FlutterActivity() {
 
         val appStats = stats.find { it.packageName == packageName }
         val timeInMs = appStats?.totalTimeInForeground ?: 0L
-        
         return (timeInMs / 1000 / 60).toInt()
     }
 
     private fun expandStatusBar(methodName: String) {
-    try {
-        @SuppressLint("WrongConstant")
-        val statusBarService = getSystemService("statusbar")
-        val statusBarManager: Class<*> = Class.forName("android.app.StatusBarManager")
-        val method: Method = statusBarManager.getMethod(methodName)
-        method.invoke(statusBarService)
-    } catch (e: Exception) {
-        e.printStackTrace()
+        try {
+            @SuppressLint("WrongConstant")
+            val statusBarService = getSystemService("statusbar")
+            val statusBarManager: Class<*> = Class.forName("android.app.StatusBarManager")
+            val method: Method = statusBarManager.getMethod(methodName)
+            method.invoke(statusBarService)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
+
+// --- CLASS SERVICE (Diletakkan di luar MainActivity) ---
+class HanZeeAccessibilityService : AccessibilityService() {
+    companion object {
+        var instance: HanZeeAccessibilityService? = null
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        instance = null
+        return super.onUnbind(intent)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onInterrupt() {}
+
+    // Fungsi untuk mematikan layar
+    fun lockScreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+        }
+    }
 }

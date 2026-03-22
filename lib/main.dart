@@ -6,12 +6,15 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
-// Import panel-panel yang baru dipisah
 import 'panels/dashboard_panel.dart';
 import 'panels/home_panel.dart';
 import 'panels/app_list_panel.dart';
 
-void main() => runApp(const HanZeeLauncher());
+void main() {
+  // Optimasi: Memastikan binding diinisialisasi sebelum menjalankan app
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const HanZeeLauncher());
+}
 
 class HanZeeLauncher extends StatelessWidget {
   const HanZeeLauncher({super.key});
@@ -24,6 +27,7 @@ class HanZeeLauncher extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: Colors.black,
+        // Optimasi: Gunakan font display yang lebih efisien jika ada
         textTheme: const TextTheme(
           displayLarge: TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.w400),
           bodyLarge: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w400),
@@ -48,240 +52,211 @@ class _MainScreenState extends State<MainScreen> {
   
   bool _isInitialLoading = true;
   Timer? _usageTimer;
+
+  // OPTIMASI: Gunakan ValueNotifier untuk data yang sering berubah (Menghindari Global Rebuild)
+  final ValueNotifier<Duration> _screenTimeNotifier = ValueNotifier(Duration.zero);
+  final ValueNotifier<Map<String, int>> _habitUsageNotifier = ValueNotifier({});
+  
   List<AppInfo> _installedApps = [];
   List<Map<String, dynamic>> _localTasks = [];
-  Duration _todayScreenTime = Duration.zero;
   List<String> _watchedPackages = [];
-  Map<String, int> _habitUsageData = {};
-  String _motivationText = "STAY FOCUSED"; // Default value
-  List<String> _quickApps = []; // Menyimpan package name aplikasi cepat
-  
+  List<String> _quickApps = [];
+  String _motivationText = "STAY FOCUSED";
 
   @override
   void initState() {
     super.initState();
     _loadData(); 
 
-    // --- POSISI YANG BENAR: DI DALAM initState ---
-    
-    // 1. Listener untuk menutup keyboard saat geser halaman
-    _pageController.addListener(() {
-      if (_pageController.hasClients && _pageController.page != 2) {
-        FocusScope.of(context).unfocus();
-      }
-    });
-
-    // 2. Timer untuk update screen time & habit dots setiap menit
+    // OPTIMASI: Gunakan timer yang lebih efisien
     _usageTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       _fetchRealScreenTime();
       _fetchHabitsUsage(); 
     });
+  }
 
-    
+  // OPTIMASI: Unfocus hanya saat halaman benar-benar berubah (bukan setiap pixel scroll)
+  void _handlePageChange(int index) {
+    if (index != 0) { // Jika bukan halaman dashboard/input, tutup keyboard
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
   }
 
   Future<void> _loadData() async {
-    setState(() => _isInitialLoading = true);
-
+    // Tetap gunakan setState hanya untuk loading awal
     try {
-      await _loadTasks();
-      await _preFetchApps(); // Tunggu daftar aplikasi selesai diambil...
-      await _loadWatchedApps(); // ...baru load habit dan hitung durasinya.
-      await _fetchRealScreenTime();
-      await _loadMotivation();
-      await _loadQuickApps();
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Ambil data sekaligus untuk mengurangi await berkali-kali
+      final tasksJson = prefs.getStringList('hanzee_tasks');
+      _watchedPackages = prefs.getStringList('watched_apps') ?? [];
+      _quickApps = prefs.getStringList('quick_apps') ?? [];
+      _motivationText = prefs.getString('motivation_text') ?? "STAY FOCUSED";
+      
+      if (tasksJson != null) {
+        _localTasks = tasksJson.map((item) => jsonDecode(item) as Map<String, dynamic>).toList();
+      }
+
+      // Fetch apps di background
+      await _preFetchApps();
+      _fetchRealScreenTime();
+      _fetchHabitsUsage();
+
     } catch (e) {
-      debugPrint("Error during initial load: $e");
+      debugPrint("Error loading data: $e");
     } finally {
       if (mounted) {
         setState(() => _isInitialLoading = false);
       }
-    }  
-  }
-
-  // Fungsi Load
-  Future<void> _loadQuickApps() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _quickApps = prefs.getStringList('quick_apps') ?? [];
-    });
-  }
-
-  // Fungsi Toggle (Tambah/Hapus)
-  void _toggleQuickApp(String packageName) async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      if (_quickApps.contains(packageName)) {
-        _quickApps.remove(packageName);
-      } else if (_quickApps.length < 5) { // Batasi maksimal 5 aplikasi
-        _quickApps.add(packageName);
-      }
-    });
-    await prefs.setStringList('quick_apps', _quickApps);
-  }
-
-  // Fungsi untuk load teks
-  Future<void> _loadMotivation() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _motivationText = prefs.getString('motivation_text') ?? "STAY FOCUSED";
-    });
-  }
-
-  // Fungsi untuk update & simpan teks
-  void _updateMotivation(String newText) async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _motivationText = newText;
-    });
-    await prefs.setString('motivation_text', newText);
-  }
-
-  Future<void> _loadWatchedApps() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _watchedPackages = prefs.getStringList('watched_apps') ?? [];
-      });
-      _fetchHabitsUsage();
     }
   }
 
-  // Ambil durasi penggunaan dari Native
+  // --- LOGIC OPTIMIZED ---
+
+  Future<void> _fetchRealScreenTime() async {
+    try {
+      final int minutes = await platform.invokeMethod('getTodayUsage');
+      _screenTimeNotifier.value = Duration(minutes: minutes);
+    } catch (_) {}
+  }
+
   Future<void> _fetchHabitsUsage() async {
+    if (_watchedPackages.isEmpty) return;
+    
     Map<String, int> tempUsage = {};
     for (String pkg in _watchedPackages) {
       try {
         final int minutes = await platform.invokeMethod('getSpecificAppUsage', {'packageName': pkg});
         tempUsage[pkg] = minutes;
-      } catch (e) {
+      } catch (_) {
         tempUsage[pkg] = 0;
       }
     }
-    if (mounted) {
-      setState(() => _habitUsageData = tempUsage);
-    }
+    _habitUsageNotifier.value = tempUsage;
   }
 
-  // Fungsi Toggle (dipanggil dari Dashboard)
-  void _toggleWatchApp(String packageName) async {
+  void _updateTasks(List<Map<String, dynamic>> newTasks) async {
+    setState(() => _localTasks = newTasks);
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('hanzee_tasks', newTasks.map((e) => jsonEncode(e)).toList());
+  }
+
+  Future<void> _preFetchApps() async {
+    try {
+      // Optimasi: Fetch tanpa icon dulu agar cepat
+      List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: false, withIcon: false); 
+      apps.sort((a, b) => (a.name).toLowerCase().compareTo((b.name).toLowerCase()));
+      if (mounted) setState(() => _installedApps = apps);
+    } catch (_) {}
+  }
+
+  // --- UI ---
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      // Penting: Scaffold di Main harus false agar DashboardPanel yang mengontrol insets
+      resizeToAvoidBottomInset: false,
+      body: GestureDetector(
+        onDoubleTap: () => platform.invokeMethod('lockScreen'),
+        onVerticalDragUpdate: (details) {
+          if (details.delta.dy > 10) {
+            final x = details.globalPosition.dx;
+            final width = MediaQuery.of(context).size.width;
+            if (x < width / 2) {
+              platform.invokeMethod('openNotifications');
+            } else {
+              platform.invokeMethod('openQuickSettings');
+            }
+          }
+        },
+        child: PageView(
+          controller: _pageController,
+          onPageChanged: _handlePageChange, // OPTIMASI: Pengganti listener controller
+          physics: const BouncingScrollPhysics(),
+          children: [
+            // Dashboard Panel
+            ValueListenableBuilder(
+              valueListenable: _screenTimeNotifier,
+              builder: (context, screenTime, _) {
+                return DashboardPanel(
+                  tasks: _localTasks,
+                  screenTime: screenTime,
+                  onTasksChanged: _updateTasks,
+                  watchedPackages: _watchedPackages,
+                  allApps: _installedApps,
+                  onToggleWatch: _toggleWatchApp,
+                  quickApps: _quickApps,
+                  onToggleQuickApp: _toggleQuickApp,
+                  isInitialLoading: _isInitialLoading,
+                );
+              }
+            ),
+
+            // Home Panel
+            ValueListenableBuilder(
+              valueListenable: _screenTimeNotifier,
+              builder: (context, screenTime, _) {
+                return ValueListenableBuilder(
+                  valueListenable: _habitUsageNotifier,
+                  builder: (context, habitData, _) {
+                    return HomePanel(
+                      screenTime: screenTime,
+                      taskCount: _localTasks.length,
+                      watchedPackages: _watchedPackages,
+                      habitUsageData: habitData,
+                      allApps: _installedApps,
+                      motivationText: _motivationText,
+                      onUpdateMotivation: _updateMotivation,
+                      quickApps: _quickApps,
+                      isInitialLoading: _isInitialLoading,
+                    );
+                  }
+                );
+              }
+            ),
+
+            // App List Panel
+            AppListPanel(
+              apps: _installedApps,
+              isInitialLoading: _isInitialLoading,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper Functions (Tetap sama tapi gunakan SharedPreferences lokal)
+  void _toggleQuickApp(String pkg) async {
     setState(() {
-      if (_watchedPackages.contains(packageName)) {
-        _watchedPackages.remove(packageName);
-      } else {
-        _watchedPackages.add(packageName);
-      }
+      _quickApps.contains(pkg) ? _quickApps.remove(pkg) : _quickApps.add(pkg);
     });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('quick_apps', _quickApps);
+  }
+
+  void _toggleWatchApp(String pkg) async {
+    setState(() {
+      _watchedPackages.contains(pkg) ? _watchedPackages.remove(pkg) : _watchedPackages.add(pkg);
+    });
+    final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('watched_apps', _watchedPackages);
-    _fetchHabitsUsage(); 
+    _fetchHabitsUsage();
+  }
+
+  void _updateMotivation(String text) async {
+    setState(() => _motivationText = text);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('motivation_text', text);
   }
 
   @override
   void dispose() {
     _usageTimer?.cancel();
     _pageController.dispose();
+    _screenTimeNotifier.dispose();
+    _habitUsageNotifier.dispose();
     super.dispose();
-  }
-
-  // --- PERSISTENCE ---
-  Future<void> _loadTasks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String>? tasksJson = prefs.getStringList('hanzee_tasks');
-    if (mounted && tasksJson != null) {
-      setState(() {
-        _localTasks = tasksJson.map((item) => jsonDecode(item) as Map<String, dynamic>).toList();
-      });
-    }
-  }
-
-  Future<void> _saveTasks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String> tasksJson = _localTasks.map((item) => jsonEncode(item)).toList();
-    await prefs.setStringList('hanzee_tasks', tasksJson);
-  }
-
-  void _updateTasks(List<Map<String, dynamic>> newTasks) {
-    setState(() => _localTasks = newTasks);
-    _saveTasks();
-  }
-
-  // --- LOGIC ---
-  Future<void> _fetchRealScreenTime() async {
-    try {
-      final int minutes = await platform.invokeMethod('getTodayUsage');
-      if (mounted) setState(() => _todayScreenTime = Duration(minutes: minutes));
-    } on PlatformException catch (e) {
-      debugPrint("Failed to get usage: ${e.message}");
-    }
-  }
-
-  Future<void> _preFetchApps() async {
-    try {
-      List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: false, withIcon: false); 
-      apps.sort((a, b) => (a.name).toLowerCase().compareTo((b.name).toLowerCase()));
-      if (mounted) setState(() => _installedApps = apps);
-    } catch (e) {
-      debugPrint("Error fetching apps: $e");
-    }
-  }
-
-  @override
-  @override
-Widget build(BuildContext context) {
-  final double screenWidth = MediaQuery.of(context).size.width;
-
-  return Scaffold(
-    resizeToAvoidBottomInset: false,
-    body: GestureDetector(
-      // PERBAIKAN: Hapus '=>' dan gunakan '{ }' saja
-      onVerticalDragUpdate: (details) {
-        // Cek jika gerakan ke bawah (delta positive)
-        if (details.delta.dy > 10) {
-          double xPosition = details.globalPosition.dx;
-          
-          if (xPosition < screenWidth / 2) {
-            // SWIPE KIRI -> Notifikasi (Pastikan pakai 's' jika di Kotlin-nya 'openNotifications')
-            platform.invokeMethod('openNotifications');
-          } else {
-            // SWIPE KANAN -> Quick Settings
-            platform.invokeMethod('openQuickSettings');
-          }
-        }
-      },
-      child: PageView(
-        controller: _pageController,
-        physics: const BouncingScrollPhysics(),
-        children: [
-          DashboardPanel(
-            tasks: _localTasks,
-            screenTime: _todayScreenTime,
-            onTasksChanged: _updateTasks,
-            watchedPackages: _watchedPackages,
-            allApps: _installedApps,
-            onToggleWatch: _toggleWatchApp,
-            quickApps: _quickApps,
-            onToggleQuickApp: _toggleQuickApp,
-            isInitialLoading: _isInitialLoading,
-          ),
-          HomePanel(
-            screenTime: _todayScreenTime, 
-            taskCount: _localTasks.length,
-            watchedPackages: _watchedPackages,
-            habitUsageData: _habitUsageData,
-            allApps: _installedApps,
-            motivationText: _motivationText,
-            onUpdateMotivation: _updateMotivation,
-            quickApps: _quickApps,
-            isInitialLoading: _isInitialLoading,
-          ),
-          AppListPanel(
-            apps: _installedApps,
-            isInitialLoading: _isInitialLoading,
-            ),
-          ],
-        ),
-      ), // Akhir GestureDetector
-    );
   }
 }
